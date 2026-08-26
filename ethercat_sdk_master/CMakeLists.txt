@@ -41,6 +41,9 @@ add_library(${PROJECT_NAME}
   src/${PROJECT_NAME}/EthercatMaster.cpp
   src/${PROJECT_NAME}/EthercatDevice.cpp
 )
+# This static archive gets linked into shared libraries (the ros2_control
+# hardware plugin), so it must be built position-independent.
+set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC
