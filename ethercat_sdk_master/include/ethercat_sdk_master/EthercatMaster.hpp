@@ -137,6 +137,12 @@ class EthercatMaster {
   long getUpdateTimeNs();
 
   /*!
+   * Returns the duration in Ns of the last PDO exchange (updateWrite+updateRead)
+   * only, excluding the paced cycle sleep. Thread safe.
+   */
+  long getPdoExchangeTimeNs();
+
+  /*!
    * Returns a raw pointer to the bus_ object.
    */
   soem_interface_rsl::EthercatBusBase* getBusPtr() { return bus_.get(); }
@@ -202,6 +208,7 @@ class EthercatMaster {
 
   std::mutex timeStepMutex_;
   long timeStepNsMeasured_{0};
+  long pdoExchangeTimeNs_{0};  // last updateWrite+updateRead duration (guarded by timeStepMutex_)
 
   std::mutex logFileStreamMutex_{};  // only for creation destruction needed, used in different thread, therefore make sure buildup before
                                      // ecat updadte thread is started.

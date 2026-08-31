@@ -192,8 +192,22 @@ void EthercatMaster::update(UpdateMode updateMode) {
     sleepEnd_ = lastWakeup_;
     firstUpdate_ = false;
   }
+  // Time the actual PDO exchange (write+read mailbox/process-data round-trip),
+  // separate from the paced cycle period reported by getUpdateTimeNs() (which is
+  // padded to timestep by createUpdateHeartbeat and so hides exchange stress).
+  // Consumers use this to decide whether it's safe to inject an out-of-band SDO
+  // before the next cyclic frame (see standalone.cpp serviceGainTransitions).
+  timespec exchStart;
+  clock_gettime(CLOCK_MONOTONIC, &exchStart);
   bus_->updateWrite();
   bus_->updateRead();
+  timespec exchEnd;
+  clock_gettime(CLOCK_MONOTONIC, &exchEnd);
+  {
+    std::lock_guard<std::mutex> lock(timeStepMutex_);
+    pdoExchangeTimeNs_ = (exchEnd.tv_sec - exchStart.tv_sec) * 1000000000L +
+                         (exchEnd.tv_nsec - exchStart.tv_nsec);
+  }
 
   // log
   if (configuration_.doBusDiagnosis) {
@@ -379,6 +393,11 @@ inline long int getTimeDiffNs(timespec* t_end, timespec* t_start) {
 long EthercatMaster::getUpdateTimeNs() {
   std::lock_guard<std::mutex> lock(timeStepMutex_);
   return timeStepNsMeasured_;
+}
+
+long EthercatMaster::getPdoExchangeTimeNs() {
+  std::lock_guard<std::mutex> lock(timeStepMutex_);
+  return pdoExchangeTimeNs_;
 }
 
 void EthercatMaster::createUpdateHeartbeat(bool enforceRate) {

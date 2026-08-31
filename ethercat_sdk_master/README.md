@@ -1,4 +1,4 @@
-# ethercat_sdk_master
+<!-- # ethercat_sdk_master
 
 The 'ethercat_sdk_master' is a common master implementation that can be used to interface multiple ethercat slaves on the same bus. 
 An example how this package can be found in the 'elmo_ethercat_sdk'
@@ -17,4 +17,4 @@ An example how this package can be found in the 'elmo_ethercat_sdk'
 - [ROS Melodic](https://wiki.ros.org/melodic)
 - catkin
 - yaml-cpp
-- gcc > 8.0
+- gcc > 8.0 -->
