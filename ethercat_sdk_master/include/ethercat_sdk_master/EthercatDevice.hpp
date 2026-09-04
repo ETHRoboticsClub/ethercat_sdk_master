@@ -96,11 +96,28 @@ class EthercatDevice : public soem_interface_rsl::EthercatSlaveBase {
   template <typename Value>
   bool sdoVerifyWrite(const uint16_t index, const uint8_t subindex, const bool completeAccess, Value value, unsigned int delay = 0) {
     Value testVal;
-    bool success = true;
-    success &= sendSdoWrite(index, subindex, completeAccess, value);
-    std::this_thread::sleep_for(std::chrono::microseconds(static_cast<unsigned int>(delay)));
-    success &= sendSdoRead(index, subindex, completeAccess, testVal);
-    return (success & (value == testVal));
+    const bool wrote = sendSdoWrite(index, subindex, completeAccess, value);
+    // Verify IMMEDIATELY first, and spend `delay` only if that disagrees. Most
+    // objects latch with the mailbox exchange itself, so the common path now
+    // costs no wall time at all.
+    //
+    // This delay used to be taken unconditionally on every call, and it dominated
+    // bring-up: ConfigureParameters issues 67 verified writes per Maxon drive at
+    // the YAML's config_run_sdo_verify_timeout of 20000 us, and devices are
+    // configured serially -- 67 x 20 ms x 22 drives is ~30 s of pure sleeping,
+    // scaling linearly with every actuator added.
+    //
+    // Objects that genuinely need settling time still get the full wait; they
+    // just pay for it alone instead of taxing the other sixty-odd.
+    if (sendSdoRead(index, subindex, completeAccess, testVal) && value == testVal) {
+      return wrote;
+    }
+    if (delay > 0) {
+      std::this_thread::sleep_for(std::chrono::microseconds(static_cast<unsigned int>(delay)));
+      const bool reread = sendSdoRead(index, subindex, completeAccess, testVal);
+      return wrote && reread && (value == testVal);
+    }
+    return false;
   }
 
  protected:
