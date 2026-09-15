@@ -200,7 +200,7 @@ class EthercatMaster {
   std::vector<EthercatDevice::SharedPtr> devices_;
   EthercatMasterConfiguration configuration_{};
   unsigned int rateTooLowCounter_{0};
-  long accumulatedDelayNs_{0};
+  static constexpr double rateTooLowLogPeriodSec_{1.0};
 
   timespec sleepEnd_{0, 0};
   timespec lastWakeup_{0, 0};

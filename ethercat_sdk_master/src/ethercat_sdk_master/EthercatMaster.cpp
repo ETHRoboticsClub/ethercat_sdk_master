@@ -418,7 +418,7 @@ void EthercatMaster::createUpdateHeartbeat(bool enforceRate) {
   // we are late.
   if (timespecSmallerThan(&sleepEnd_, &now)) {
     rateTooLowCounter_++;
-    accumulatedDelayNs_ = accumulatedDelayNs_ + getTimeDiffNs(&now, &sleepEnd_);  // might overflow
+    const long lateNs = getTimeDiffNs(&now, &sleepEnd_);
     // prevent the creation of a too low update step
     addNsecsToTimespec(&lastWakeup_, static_cast<long int>(configuration_.rateCompensationCoefficient * timestepNs_));
     // we need to sleep a bit
@@ -426,14 +426,16 @@ void EthercatMaster::createUpdateHeartbeat(bool enforceRate) {
       highPrecisionSleep(lastWakeup_);
     }
 
+    // A sustained overrun means the loop runs below its rate; the per-cycle
+    // lateness says by how much. Throttled: this runs once per cycle.
     if (rateTooLowCounter_ >= configuration_.updateRateTooLowWarnThreshold) {
-      MELO_DEBUG_STREAM(
-          "[ethercat_sdk_master:EthercatMaster::createUpdateHeartbeat]: update rate too low, accumulated delay: " << accumulatedDelayNs_);
+      MELO_WARN_THROTTLE_STREAM(rateTooLowLogPeriodSec_, "[ethercat_sdk_master:EthercatMaster::createUpdateHeartbeat]: update rate too low for "
+                                                             << rateTooLowCounter_ << " cycles, this cycle " << lateNs << " ns late (time step "
+                                                             << timestepNs_ << " ns)");
     }
 
   } else {
     rateTooLowCounter_ = 0;
-    accumulatedDelayNs_ = 0;
     highPrecisionSleep(sleepEnd_);
   }
   timespec measurementTime;
