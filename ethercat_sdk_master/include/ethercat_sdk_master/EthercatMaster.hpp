@@ -135,6 +135,9 @@ class EthercatMaster {
    *
    */
   long getUpdateTimeNs();
+  long takePeakUpdateTimeNs();
+  // Executor-side file logging; never call from the cyclic worker.
+  void logBusDiagnosis();
 
   /*!
    * Returns the duration in Ns of the last PDO exchange (updateWrite+updateRead)
@@ -207,6 +210,7 @@ class EthercatMaster {
   long int timestepNs_{0};
 
   std::mutex timeStepMutex_;
+  std::atomic<long> peakTimeStepNs_{0};
   long timeStepNsMeasured_{0};
   long pdoExchangeTimeNs_{0};  // last updateWrite+updateRead duration (guarded by timeStepMutex_)
 

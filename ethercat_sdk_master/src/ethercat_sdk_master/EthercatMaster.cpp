@@ -192,11 +192,7 @@ void EthercatMaster::update(UpdateMode updateMode) {
     sleepEnd_ = lastWakeup_;
     firstUpdate_ = false;
   }
-  // Time the actual PDO exchange (write+read mailbox/process-data round-trip),
-  // separate from the paced cycle period reported by getUpdateTimeNs() (which is
-  // padded to timestep by createUpdateHeartbeat and so hides exchange stress).
-  // Consumers use this to decide whether it's safe to inject an out-of-band SDO
-  // before the next cyclic frame (see standalone.cpp serviceGainTransitions).
+  // Measure exchange duration independently of the paced cycle.
   timespec exchStart;
   clock_gettime(CLOCK_MONOTONIC, &exchStart);
   bus_->updateWrite();
@@ -209,46 +205,10 @@ void EthercatMaster::update(UpdateMode updateMode) {
                          (exchEnd.tv_nsec - exchStart.tv_nsec);
   }
 
-  // log
-  if (configuration_.doBusDiagnosis) {
-    if (busDiagDecimationCount_ >
-        200) {  // after 100 pdo cycles a 1 diagnosis datagram send, this datagram swaps between error counter or state depending on config.
-      bus_->doBusMonitoring(configuration_.logErrorCounters);
-      if (configuration_.logErrorCounters) {
-        bool diagUpdated = bus_->getBusDiagnosisLog(busDiagnosisLog_);
-        if (diagUpdated) {  // will only be fully after some runs, depends on number of slaves on the bus.
-          MELO_DEBUG_STREAM("[EcatMaster::" << bus_->getName() << "::Update] Writing log to file (or buffer)")
-          // write the error counter to the file:
-          auto currentTime = std::chrono::system_clock::now();
-          auto msSinceStart =
-              std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch() - logStartTime_.time_since_epoch());
-          std::chrono::seconds secondsSinceStart = std::chrono::duration_cast<std::chrono::seconds>(msSinceStart);
-          std::chrono::milliseconds millisecondsSinceStart =
-              std::chrono::duration_cast<std::chrono::milliseconds>(msSinceStart % std::chrono::seconds(1));
-          std::lock_guard busDiagStreamLock(logFileStreamMutex_);
-          busDiagnosisLogFile_ << secondsSinceStart.count() << "." << std::setw(3) << std::setfill('0') << millisecondsSinceStart.count()
-                               << ", ";
-          busDiagnosisLogFile_ << busDiagnosisLog_.ecatApplicationLayerStatus << ", ";
-          for (size_t slaveCount = 0; slaveCount < busDiagnosisLog_.errorCounters_.size(); slaveCount++) {
-            for (size_t errorRegCount = 0; errorRegCount < static_cast<size_t>(soem_interface_rsl::REG::ERROR_COUNTERS::SIZE);
-                 errorRegCount++) {
-              busDiagnosisLogFile_ << busDiagnosisLog_.errorCounters_[slaveCount][errorRegCount].fullValue;
-              bool lastEntry = (slaveCount == busDiagnosisLog_.errorCounters_.size() - 1) &&
-                               (errorRegCount == static_cast<size_t>(soem_interface_rsl::REG::ERROR_COUNTERS::SIZE) - 1);
-              if (!lastEntry) {
-                busDiagnosisLogFile_ << ", ";
-              }
-            }
-          }
-          busDiagnosisLogFile_ << std::endl;  // flush after every loop.
-        }
-      }
-      busDiagDecimationCount_ = 0;
-    }
-    busDiagDecimationCount_++;
+  if (configuration_.doBusDiagnosis && ++busDiagDecimationCount_ > 200) {
+    bus_->doBusMonitoring(configuration_.logErrorCounters);
+    busDiagDecimationCount_ = 0;
   }
-  // we should flush here to not leave the function (and therefore the thread
-
   // create update heartbeat if in standalone mode
   switch (updateMode) {
     case UpdateMode::StandaloneEnforceRate:
@@ -261,6 +221,39 @@ void EthercatMaster::update(UpdateMode updateMode) {
       break;
   }
 }
+
+void EthercatMaster::logBusDiagnosis() {
+  if (!bus_ || !configuration_.doBusDiagnosis || !configuration_.logErrorCounters) return;
+  bool diagUpdated = bus_->getBusDiagnosisLog(busDiagnosisLog_);
+  if (diagUpdated) {  // will only be fully after some runs, depends on number of slaves on the bus.
+    MELO_DEBUG_STREAM("[EcatMaster::" << bus_->getName() << "::Update] Writing log to file (or buffer)")
+    // write the error counter to the file:
+    auto currentTime = std::chrono::system_clock::now();
+    auto msSinceStart =
+        std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch() - logStartTime_.time_since_epoch());
+    std::chrono::seconds secondsSinceStart = std::chrono::duration_cast<std::chrono::seconds>(msSinceStart);
+    std::chrono::milliseconds millisecondsSinceStart =
+        std::chrono::duration_cast<std::chrono::milliseconds>(msSinceStart % std::chrono::seconds(1));
+    std::lock_guard busDiagStreamLock(logFileStreamMutex_);
+    busDiagnosisLogFile_ << secondsSinceStart.count() << "." << std::setw(3) << std::setfill('0') << millisecondsSinceStart.count()
+                         << ", ";
+    busDiagnosisLogFile_ << busDiagnosisLog_.ecatApplicationLayerStatus << ", ";
+    for (size_t slaveCount = 0; slaveCount < busDiagnosisLog_.errorCounters_.size(); slaveCount++) {
+      for (size_t errorRegCount = 0; errorRegCount < static_cast<size_t>(soem_interface_rsl::REG::ERROR_COUNTERS::SIZE);
+           errorRegCount++) {
+        busDiagnosisLogFile_ << busDiagnosisLog_.errorCounters_[slaveCount][errorRegCount].fullValue;
+        bool lastEntry = (slaveCount == busDiagnosisLog_.errorCounters_.size() - 1) &&
+                         (errorRegCount == static_cast<size_t>(soem_interface_rsl::REG::ERROR_COUNTERS::SIZE) - 1);
+        if (!lastEntry) {
+          busDiagnosisLogFile_ << ", ";
+        }
+      }
+    }
+    busDiagnosisLogFile_ << std::endl;  // flush after every loop.
+  }
+}
+
+long EthercatMaster::takePeakUpdateTimeNs() { return peakTimeStepNs_.exchange(0); }
 
 void EthercatMaster::shutdown() {
   if (bus_) {
@@ -356,11 +349,12 @@ bool EthercatMaster::setRealtimePriority(int priority, int cpu_core) const {
 ////////////////////////////
 
 // true if ts1 < ts2
-inline bool timespecSmallerThan(timespec* ts1, timespec* ts2) {
+inline bool timespecSmallerThan(const timespec* ts1, const timespec* ts2) {
   return (ts1->tv_sec < ts2->tv_sec || (ts1->tv_sec == ts2->tv_sec && ts1->tv_nsec < ts2->tv_nsec));
 }
 
 inline void highPrecisionSleep(timespec ts) {
+  const timespec deadline = ts;
   if (ts.tv_nsec >= SLEEP_EARLY_STOP_NS) {
     ts.tv_nsec -= SLEEP_EARLY_STOP_NS;
   } else {
@@ -373,7 +367,7 @@ inline void highPrecisionSleep(timespec ts) {
   timespec now;
   do {
     clock_gettime(CLOCK_MONOTONIC, &now);
-  } while (timespecSmallerThan(&now, &ts));
+  } while (timespecSmallerThan(&now, &deadline));
 }
 
 inline void addNsecsToTimespec(timespec* ts, long int ns) {
@@ -420,10 +414,11 @@ void EthercatMaster::createUpdateHeartbeat(bool enforceRate) {
     rateTooLowCounter_++;
     const long lateNs = getTimeDiffNs(&now, &sleepEnd_);
     // prevent the creation of a too low update step
-    addNsecsToTimespec(&lastWakeup_, static_cast<long int>(configuration_.rateCompensationCoefficient * timestepNs_));
+    timespec earliestWakeup = lastWakeup_;
+    addNsecsToTimespec(&earliestWakeup, static_cast<long int>(configuration_.rateCompensationCoefficient * timestepNs_));
     // we need to sleep a bit
-    if (timespecSmallerThan(&now, &lastWakeup_)) {
-      highPrecisionSleep(lastWakeup_);
+    if (timespecSmallerThan(&now, &earliestWakeup)) {
+      highPrecisionSleep(earliestWakeup);
     }
 
     // A sustained overrun means the loop runs below its rate; the per-cycle
@@ -443,8 +438,11 @@ void EthercatMaster::createUpdateHeartbeat(bool enforceRate) {
   {
     std::lock_guard<std::mutex> lock(timeStepMutex_);
     timeStepNsMeasured_ = getTimeDiffNs(&measurementTime, &lastWakeup_);
+    long peak = peakTimeStepNs_.load();
+    while (peak < timeStepNsMeasured_ &&
+           !peakTimeStepNs_.compare_exchange_weak(peak, timeStepNsMeasured_)) {}
   }
-  clock_gettime(CLOCK_MONOTONIC, &lastWakeup_);
+  lastWakeup_ = measurementTime;
 }
 
 }  // namespace ecat_master
