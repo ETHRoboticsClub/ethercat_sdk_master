@@ -87,7 +87,11 @@ EthercatMasterConfiguration EthercatMaster::getConfiguration() {
 }
 
 void EthercatMaster::createEthercatBus() {
-  bus_.reset(new soem_interface_rsl::EthercatBusBase(configuration_.networkInterface));
+  if (configuration_.transportFactory) {
+    bus_ = std::make_unique<soem_interface_rsl::EthercatBusBase>(configuration_.transportFactory());
+    return;
+  }
+  bus_ = std::make_unique<soem_interface_rsl::EthercatBusBase>(configuration_.networkInterface);
 }
 
 bool EthercatMaster::attachDevice(EthercatDevice::SharedPtr device) {

@@ -14,7 +14,11 @@
 
 #pragma once
 
+#include <functional>
+#include <memory>
 #include <string>
+
+#include <soem_interface_rsl/BusTransport.hpp>
 
 namespace ecat_master{
 
@@ -33,6 +37,13 @@ struct EthercatMasterConfiguration{
    * Use `ip link show` to list available interfaces.
    */
   std::string networkInterface{""};
+
+  /*!
+   * The segment the bus runs on. Empty selects SOEM on networkInterface; a
+   * factory supplies another transport (a fake CoE segment) built over the
+   * same bus core. The master resolves it once, when it creates the bus.
+   */
+  std::function<std::unique_ptr<soem_interface_rsl::BusTransport>()> transportFactory;
 
   /// Communication update time step.
   double timeStep{0.0};
