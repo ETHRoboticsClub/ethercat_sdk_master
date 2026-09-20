@@ -121,12 +121,13 @@ class EthercatMaster {
   void shutdown();
 
   /*!
-   * Pre shutdown communication.
-   * Call preShutdown() of every attached device.
-   * This function needs to be executed while the cyclic communication (PDO communication) is running.
-   * @param setIntoSafeOP sets the EthercatBus back into SafeOP (same as deactivate call), to not trigger cyclic communication watchdogs on
-   * slaves during shutdown.
-   * @see https://bitbucket.org/leggedrobotics/ethercat_device_configurator/src/master/src/standalone.cpp
+   * Call preShutdown() of every attached device with the bus in SAFE-OP.
+   * The device hooks use synchronous SDOs, which the bus refuses in OP, so
+   * they run after the transition. Call this once the cyclic update loop has
+   * stopped; a device that needs the cyclic frame for its de-energize stages
+   * that over PDO beforehand (see Maxon::setDriveStateViaPdo).
+   * @param setIntoSafeOP take the bus to SAFE-OP here (same as deactivate());
+   * false when the caller already did.
    */
   void preShutdown(bool setIntoSafeOP = false);
 

@@ -268,21 +268,16 @@ void EthercatMaster::shutdown() {
 }
 
 void EthercatMaster::preShutdown(bool setIntoSafeOP) {
-  if (bus_) {  // check if the bus is not shutdown already..
-    for (auto& device : devices_) {
-      if (device) {
-        device->preShutdown();
-      }
-    }
-
-    if (setIntoSafeOP) {
-      MELO_DEBUG_STREAM("[EthercatMaster::" << bus_->getName() << "] Trying to deavtivete the bus")
-      // immediately fall back to SAFE_OP so that no PDO timeout triggered during shutdown. PDO readings will still be received, slave
-      // outputs are active but in "safe" state. probably vendor dependent what safe state means. after preShutdown slave should be in a
-      // state which allows to fallback into EC_STATE_SAFE_OP without triggering any further slave Call
-      bus_->setState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
-      bus_->waitForState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
-    }
+  if (!bus_) return;  // already shut down
+  if (setIntoSafeOP) {
+    // Before the device hooks: the bus refuses synchronous SDOs in OP, and
+    // no cyclic frame runs afterwards, so no slave watchdog trips.
+    MELO_DEBUG_STREAM("[EthercatMaster::" << bus_->getName() << "] Trying to deactivate the bus")
+    bus_->setState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
+    bus_->waitForState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
+  }
+  for (auto& device : devices_) {
+    if (device) device->preShutdown();
   }
 }
 

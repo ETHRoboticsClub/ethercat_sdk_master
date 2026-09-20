@@ -58,15 +58,10 @@ class EthercatDevice : public soem_interface_rsl::EthercatSlaveBase {
   virtual void setTimeStep(double timeStep);
 
   /*!
-   * PDO preparation for communication shutdown.
-   * Things that need to be done before the PDO communication stops.
-   * This function must be called in a thread separated from the communication
-   * update thread!
-   * The PDO communication will continue during the execution of this function.
-   * Pay attention to not block updateRead or updateWrite with mutexes and don't
-   * create data races.
-   * This function should only return once the desired state of the drive has been reached.
-   * Look at the AnydriveEthercatSlave class in the anydrive_sdk for an example.
+   * De-energize fallback, run by EthercatMaster::preShutdown() with the bus in
+   * SAFE-OP and no cyclic frame: synchronous SDOs work here and are refused
+   * in OP. Return once the drive's state is confirmed or the failure is
+   * reported.
    */
   virtual void preShutdown(){};
 
