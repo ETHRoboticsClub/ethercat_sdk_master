@@ -182,12 +182,9 @@ bool EthercatMaster::activate() {
 }
 
 bool EthercatMaster::deactivate() {
-  // is there any action on the slaves needed?, the slaves EC SM and Drive SM should take care of it?
-
-  bool success = true;
-  bus_->setState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
-  success &= bus_->waitForState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP, 0, 0);
-  return success;
+  // Every answering slave to SAFE-OP; a slave off the bus is reported and skipped,
+  // so a dead drive cannot hold the cyclic loop's exit (see the bus contract).
+  return bus_->setStateSkippingSilent(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
 }
 
 void EthercatMaster::update(UpdateMode updateMode) {
@@ -272,9 +269,7 @@ void EthercatMaster::preShutdown(bool setIntoSafeOP) {
   if (setIntoSafeOP) {
     // Before the device hooks: the bus refuses synchronous SDOs in OP, and
     // no cyclic frame runs afterwards, so no slave watchdog trips.
-    MELO_DEBUG_STREAM("[EthercatMaster::" << bus_->getName() << "] Trying to deactivate the bus")
-    bus_->setState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
-    bus_->waitForState(soem_interface_rsl::ETHERCAT_SM_STATE::SAFE_OP);
+    deactivate();
   }
   for (auto& device : devices_) {
     if (device) device->preShutdown();
