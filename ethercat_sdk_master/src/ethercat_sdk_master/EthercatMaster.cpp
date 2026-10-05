@@ -123,7 +123,7 @@ bool EthercatMaster::startup(std::atomic<bool>& abortFlag) {
 
   // write the header of the diagnosis log
   if (configuration_.logErrorCounters) {
-    if (busDiagnosisLogFile_) {
+    if (busDiagnosisLogFile_.is_open()) {
       std::lock_guard busDiagStreamLock(logFileStreamMutex_);
       busDiagnosisLogFile_ << "Time, " << configuration_.networkInterface << ", ";
       for (size_t slaveCount = 0; slaveCount < devices_.size(); slaveCount++) {

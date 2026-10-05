@@ -218,7 +218,7 @@ class EthercatMaster {
   std::mutex logFileStreamMutex_{};  // only for creation destruction needed, used in different thread, therefore make sure buildup before
                                      // ecat updadte thread is started.
   size_t busDiagDecimationCount_{0};
-  std::fstream busDiagnosisLogFile_{nullptr};
+  std::fstream busDiagnosisLogFile_;
   std::chrono::time_point<std::chrono::system_clock> logStartTime_;
   soem_interface_rsl::BusDiagnosisLog busDiagnosisLog_{};
 
